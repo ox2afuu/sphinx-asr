@@ -1,3 +1,6 @@
+# override global gitignore — this repo tracks its CLAUDE.md
+!CLAUDE.md
+
 features/
 experiments/
 *.log
