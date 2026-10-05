@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `vendor/pocketsphinx` — decoding binaries.
 - `vendor/cmu_toolkit` — CMU-Cambridge SLM toolkit (for building ARPA language models).
 
-The Python code under `scripts/` generates the config/fileids/transcriptions those tools expect, then orchestrates the Perl pipeline steps. There is no Python test suite and no linter configured; correctness is validated by actually running a train/decode end-to-end on a corpus.
+The Python code under `scripts/` generates the config/fileids/transcriptions those tools expect, then orchestrates the Perl pipeline steps. A pytest suite (`tests/`) covers the pure config logic and known defects, and docstrings are linted (see "Tests, docstrings and hooks" below); end-to-end correctness is still validated by actually running a train/decode on a corpus.
 
 ## Common commands
 
@@ -27,9 +27,26 @@ sudo make link             # symlink ./sphinx.sh to /usr/local/bin/sphinx
 ./sphinx.sh decode <exp_dir>       # run pocketsphinx batch decode + scoring
 ```
 
-There is no "run a single test" — the smoke test is `sphinx new -t librispeech && sphinx setup experiments/NNN && sphinx train experiments/NNN && sphinx decode experiments/NNN`.
+Unit tests: see "Tests, docstrings and hooks" below. The end-to-end smoke test is `sphinx new -t librispeech && sphinx setup experiments/NNN && sphinx train experiments/NNN && sphinx decode experiments/NNN`.
 
 First invocation of `sphinx.sh` auto-creates `.venv/` and `pip install`s `requirements.txt` (`pyyaml`, `numpy`, `scipy`). All Python scripts require `SPHINX_ROOT` to be set; `sphinx.sh` sets it for you, so prefer invoking scripts through it rather than calling `python scripts/*.py` directly.
+
+## Tests, docstrings and hooks
+
+Full standard: `docs/DOCSTRINGS.md`. Dev tooling runs via `uv`/`uvx --no-project`, never inside `.venv/` (runtime only; `requirements.txt` stays the airgap source of truth, `pyproject.toml` just mirrors it and configures tools).
+
+```
+uv run --no-project --with pytest --with-requirements requirements.txt python -m pytest -q   # all tests
+uv run --no-project --with pytest --with-requirements requirements.txt python -m pytest -q tests/scripts/test_config.py::test_bool_becomes_perl_yes_no   # one test
+uvx ruff@0.16.10 check --select D,DOC,F --preview scripts tools                              # Google docstrings
+uv run --no-project python tools/check_test_docstrings.py tests                              # GIVEN/WHEN/THEN checker
+```
+
+- **Application code** (`scripts/`, `tools/`): Google-style docstrings, enforced by ruff `D` (convention google) + preview `DOC` (pydoclint), so Args/Returns/Raises must match the code. List only explicitly raised exceptions under `Raises:`.
+- **Tests** (`tests/`): docstrings use `Given:` (inputs + a stated baseline/expected), `When:` (one action), `Then:` (every assertion), optional `Raises:`; checked by `tools/check_test_docstrings.py` (rules TDS001-TDS008).
+- `tests/conftest.py` puts `scripts/`, `scripts/lib/` and `tools/` on `sys.path`; import config as `from lib.config import ...` (it uses a relative import).
+- Known review defects are `xfail(strict=True)` tests in `tests/scripts/test_known_defects.py` asserting the correct behaviour. Fixing one makes it XPASS and fail: delete its marker. Note #6: `_apply_overrides()` currently drops `sphinxtrain:` keys that are absent from the template.
+- **Hooks** (`lefthook.yml`, run `lefthook install`): pre-commit checks only staged files (ruff on `scripts/`+`tools/`, TDS checker on `tests/`, no-emoji, fast pytest), a ratchet so touched files must comply; pre-push checks the whole tree and runs the full suite.
 
 ## Architecture
 
