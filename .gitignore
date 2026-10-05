@@ -35,3 +35,6 @@ corpus/*/**
 !corpus/*/dict/
 !corpus/*/lm/.gitkeep
 !corpus/*/dict/.gitkeep
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
