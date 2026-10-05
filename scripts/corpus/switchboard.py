@@ -1,5 +1,28 @@
-"""
-Switchboard corpus adapter.
+"""Switchboard corpus adapter.
+
+Loaded with `get_adapter("switchboard")` by `sphinx.sh setup` and
+`sphinx.sh lm`. Switchboard transcripts are segment lists with one line
+per utterance (utterance id, start time, end time, text) and use
+bracketed markup for noises, partial words and laughter. `clean_text`
+reduces that markup to the word sequence used for training, keeping three
+noise events as filler tokens.
+
+The adapter assumes the audio is already segmented into one file per
+utterance, named after the utterance id, in the audio directory. The
+start and end times in the transcript are ignored.
+
+Files read: the split's transcript file (`transcripts` in the split's
+`corpus.yml` entry). Files written: none. Environment variables: none;
+the project root is inferred from the corpus directory.
+
+Attributes:
+    FILLERS: Lower-case names of the bracketed events kept as filler
+        tokens.
+    LAUGHTER_WORD: Matches `[laughter-<word>]`, case-insensitively, and
+        captures the word.
+    BRACKET_TAG: Matches any `[...]` annotation.
+    ANGLE_TAG: Matches `<<...>>` annotations.
+    MULTI_SPACE: Matches whitespace runs, for collapsing.
 """
 
 import re
@@ -15,15 +38,35 @@ ANGLE_TAG = re.compile(r"<<[^>]+>>")
 MULTI_SPACE = re.compile(r"\s+")
 
 def clean_text(text: str) -> str:
-    """
-    clean switchboard transcript text
+    """Normalise the text of one Switchboard transcript segment.
 
-    expand [laughter-word] into [LAUGHTER] word
-    keep [NOISE], [LAUGHTER], [VOCALIZED-NOISE] as filler tokens
-    remove other tags (like [t], [d], [ou])
-    remove <<word>> annotations
-    uppercase everything
-    collaspe whitespace
+    The transformations are applied in order:
+
+    1. `[laughter-<word>]` becomes `[laughter] <word>` (the tag is matched
+       case-insensitively).
+    2. The filler tags `[noise]`, `[laughter]` and `[vocalized-noise]` are
+       protected with temporary placeholders. Only these exact lower-case
+       spellings are protected.
+    3. Every other `[...]` tag (for example `[t]`, `[d]`, `[ou]`, or an
+       upper-case `[NOISE]`) is deleted, as are `<<...>>` annotations.
+    4. The protected fillers are restored as `[NOISE]`, `[LAUGHTER]` and
+       `[VOCALIZED-NOISE]`.
+    5. The string is upper-cased, and whitespace runs are collapsed to
+       single spaces with no leading or trailing space.
+
+    Args:
+        text: Raw text of one segment (the fourth field of a transcript
+            line).
+
+    Returns:
+        The cleaned text. It is empty if the segment contained only removed
+            annotations.
+
+    Examples:
+        >>> clean_text("[laughter-yes] i [noise] think [t] <<unclear>> so")
+        '[LAUGHTER] YES I [NOISE] THINK SO'
+        >>> clean_text("[silence]")
+        ''
     """
     text = LAUGHTER_WORD.sub(r"[laughter] \1", text)
 
@@ -50,8 +93,34 @@ def get_utterances(
         split_cfg: dict,
         corpus_cfg: dict
 ) -> Iterator[tuple[str, str]]:
-    """
-    yield (fileid, text) pairs for a librispeech split
+    """Yield `(fileid, text)` pairs for one Switchboard split.
+
+    The split's transcript file is read line by line. Each non-blank line is
+    split on whitespace into at most four fields (utterance id, start time,
+    end time, text). Lines with fewer than four fields are skipped, the text
+    is passed through `clean_text`, and segments whose cleaned text is empty
+    are skipped.
+
+    The project root is taken to be `corpus_dir.parent.parent`; that is, the
+    corpus is assumed to live at `<SPHINX_ROOT>/corpus/<name>/`.
+
+    Args:
+        corpus_dir: Corpus directory (the `_dir` key set by `load_corpus`).
+        split_name: Split name, used only in the error message.
+        split_cfg: The split's mapping from `corpus.yml`. `transcripts`
+            (a path relative to `corpus_dir`) is required; `audio`
+            optionally overrides the corpus-level audio directory.
+        corpus_cfg: The full `corpus.yml` mapping. Its `audio_dir` is used
+            when the split has no `audio` key.
+
+    Yields:
+        Pairs `(fileid, text)`. `fileid` is `<audio_dir>/<utt_id>` relative
+            to the project root, without an extension, and `text` is the
+            output of `clean_text`.
+
+    Raises:
+        FileNotFoundError: If the transcript file does not exist. Because
+            this is a generator, it is raised on the first `next()` call.
     """
     trans_path = corpus_dir / split_cfg["transcripts"]
     if not trans_path.is_file():

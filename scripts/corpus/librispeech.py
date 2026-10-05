@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
-"""
-librispeech corpus adapter
+"""LibriSpeech corpus adapter.
+
+Loaded with `get_adapter("librispeech")` by `sphinx.sh setup` and
+`sphinx.sh lm`. LibriSpeech stores each chapter as a directory
+`<speaker>/<chapter>/` holding the audio files and one
+`<speaker>-<chapter>.trans.txt` transcript whose lines have the form
+`<utt_id> <TEXT>`. The text is already upper-case and unpunctuated, so it
+is passed through unchanged.
+
+Files read: every `*.trans.txt` below the split's audio directory.
+Files written: none. Environment variables: none; the project root is
+inferred from the corpus directory.
 """
 
 from pathlib import Path
@@ -13,8 +23,33 @@ def get_utterances(
         split_cfg: dict,
         corpus_cfg: dict
 ) -> Iterator[tuple[str, str]]:
-    """
-    yield (fileid, text) pairs for a librispeech split
+    """Yield `(fileid, text)` pairs for one LibriSpeech split.
+
+    The split's audio directory is `corpus_dir / split_cfg["audio"]`, or
+    `corpus_dir / split_name` when `audio` is not set. Every `*.trans.txt`
+    file below it is read in sorted path order, and each non-blank line is
+    split at its first space into an utterance id and the text.
+
+    The project root is taken to be `corpus_dir.parent.parent`; that is, the
+    corpus is assumed to live at `<SPHINX_ROOT>/corpus/<name>/`.
+
+    Args:
+        corpus_dir: Corpus directory (the `_dir` key set by `load_corpus`).
+        split_name: Split name. Also the default audio subdirectory.
+        split_cfg: The split's mapping from `corpus.yml`. Only the optional
+            `audio` key is used.
+        corpus_cfg: The full `corpus.yml` mapping. Unused by this adapter;
+            accepted for interface compatibility.
+
+    Yields:
+        Pairs `(fileid, text)`. `fileid` is `<chapter_dir>/<utt_id>`
+            relative to the project root, without an extension, and `text` is
+            the transcript text exactly as it appears in the file.
+
+    Raises:
+        FileNotFoundError: If the split's audio directory does not exist.
+            Because this is a generator, it is raised on the first `next()`
+            call, not when the function is called.
     """
     audio_dir = corpus_dir / split_cfg.get("audio", split_name)
 
