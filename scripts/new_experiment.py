@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""
-Create a new experiment directory with a config template.
-TODO: Wiki page stuff
+"""Scaffold a new numbered experiment directory from a config template.
 
-Usage:
-    new_experiment.py   use default template
-    new_experiment.py -- template <corpus_name> use corpus-specific template
-    new_experiment.py --list    list available corpora
+Invoked as `sphinx.sh new [-t CORPUS] [-l]`. Creates
+`experiments/<NNN>/` (the next free number, zero-padded to three digits)
+and copies a template into it as `experiment.yml`. With `-t CORPUS` the
+template is `corpus/<CORPUS>/experiment.yml.template` if it exists;
+otherwise, and without `-t`, it is the generic `experiment.yml.template`
+at the project root. With `-l`, the corpora are listed instead.
+
+Files read: `experiment.yml.template`, `corpus/*/corpus.yml` (existence
+only) and `corpus/*/experiment.yml.template`. Files written:
+`experiments/<NNN>/experiment.yml`.
+
+Environment variables read: `SPHINX_ROOT`.
+
+Usage: `new_experiment.py [-t CORPUS] [-l]`
 """
 
 import argparse
@@ -21,19 +29,38 @@ from lib.asr_util import err, get_sphinx_root
 
 @dataclass
 class Corpus:
-    """Used for corpus list"""
+    """Summary of one corpus, as listed by `sphinx.sh new -l`.
+
+    Attributes:
+        name: Corpus directory name under `corpus/`.
+        has_template: Whether `corpus/<name>/experiment.yml.template` exists.
+    """
     name: str
     has_template: bool
 
 @dataclass
 class ConfigTemplate:
-    """Corpus template name and path."""
+    """An experiment template file and the label shown when it is used.
+
+    Attributes:
+        path: Path of the template file to copy.
+        label: Human-readable description printed after creation, such as
+            the corpus name or `generic`.
+    """
     path: Path
     label: str
 
 
 def get_corpora_list(corpus_dir: Path) -> list[Corpus]:
-    """Find all corpora that have a corpus.yml file."""
+    """List the corpora that have a `corpus.yml`.
+
+    Args:
+        corpus_dir: The `corpus/` directory under the project root.
+
+    Returns:
+        One `Corpus` per subdirectory containing `corpus.yml`, sorted by
+            name. Empty if `corpus_dir` does not exist.
+    """
     corpora = []
     if not corpus_dir.is_dir():
         return corpora
@@ -45,7 +72,16 @@ def get_corpora_list(corpus_dir: Path) -> list[Corpus]:
 
 
 def next_experiment_number(experiments_dir: Path) -> int:
-    """Find the next available experiment number."""
+    """Return the next unused experiment number.
+
+    Args:
+        experiments_dir: The `experiments/` directory.
+
+    Returns:
+        One more than the largest entry name in `experiments_dir` that parses
+            as an integer, or 1 if there is none or the directory does not
+            exist. Gaps in the numbering are not reused.
+    """
     if not experiments_dir.is_dir():
         return 1
     existing = []
@@ -58,7 +94,13 @@ def next_experiment_number(experiments_dir: Path) -> int:
 
 
 def print_corpora_list(corpora_list: list[Corpus], templates_only=False):
-    """Prints a Corpus list"""
+    """Print corpora, marking those that ship an experiment template.
+
+    Args:
+        corpora_list: Corpora to print, in order.
+        templates_only (bool): If true, print only corpora that have a
+            template. `main` never sets it.
+    """
     print("Available corpora:")
     for corpus in corpora_list:
         if not corpus.has_template and templates_only:
@@ -72,7 +114,21 @@ def get_corpus_template(
         default_path: Path,
         corpus_path: Path
 ) -> ConfigTemplate | None:
-    """Get corpus template for path (if exists)."""
+    """Choose the experiment template for a corpus.
+
+    Args:
+        template_name: Corpus name given with `-t`, or `None` or empty for
+            the generic template.
+        default_path: Path of the generic `experiment.yml.template` at the
+            project root.
+        corpus_path: The corpus directory, `corpus/<template_name>`.
+
+    Returns:
+        `None` if `corpus_path` is not a directory. Otherwise the generic
+            template when `template_name` is empty, the corpus's own
+            `experiment.yml.template` when it exists, or else the generic
+            template with a label noting that no corpus template was found.
+    """
     if not corpus_path.is_dir():
         return None
 
@@ -95,7 +151,18 @@ def make_experiment_dir(
         exp_dir: Path,
         root_dir: Path,
         config_template: ConfigTemplate):
-    """Create the experiment directory."""
+    """Create `experiments/<NNN>/` and copy the template into it.
+
+    The directory is created with its parents if needed. If it already
+    exists, its `experiment.yml` is overwritten. The template is copied with
+    `shutil.copy2`, which preserves file metadata.
+
+    Args:
+        num: Experiment number, formatted as three zero-padded digits.
+        exp_dir: The `experiments/` directory.
+        root_dir: Project root, used to print a relative path.
+        config_template: The template to copy.
+    """
     exp_name = f"{num:03d}"
     exp_subdir = exp_dir / exp_name
     exp_subdir.mkdir(parents=True, exist_ok=True)
@@ -106,7 +173,24 @@ def make_experiment_dir(
 
 
 def main():
-    """Program entry."""
+    """Run `sphinx.sh new`: create the next numbered experiment.
+
+    Raises:
+        SystemExit: With code 0 after `--list`; with code 1 if `SPHINX_ROOT`
+            is unset, if `--list` finds no corpora, or if the chosen template
+            file does not exist (via `err`); with code 2 on argparse errors.
+        AttributeError: If `-t` names a corpus whose directory does not
+            exist.
+
+    Warning:
+        An unknown corpus passed with `-t` makes `get_corpus_template` return
+        `None`, and the next statement reads `config_template.path`, so the
+        script fails with `AttributeError` instead of a clear error message.
+
+    Note:
+        The "template not found" message lacks an f-string prefix, so it
+        prints `{config_template.path}` literally.
+    """  # noqa: DOC502
     parser = argparse.ArgumentParser(
         description="Create a new experiment directory with a config template."
     )

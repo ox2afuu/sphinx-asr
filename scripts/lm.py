@@ -1,11 +1,28 @@
 #!/usr/bin/env python3
-"""
-Build a trigram language model from training transcripts.
+"""Build an ARPA n-gram language model from corpus transcripts.
 
-uses CMU SLM toolkit to build an LM (.arpa format)
+Invoked as `sphinx.sh lm <corpus> <split>` (one split) or
+`sphinx.sh lm <corpus> --all` (the corpus's `full_transcripts` file),
+with optional `-n/--order` (default 3) and `-o/--output`. The text comes
+from the corpus adapter, each sentence is wrapped in `<s> ... </s>`, and
+the CMU-Cambridge SLM toolkit chain `text2wfreq`, `wfreq2vocab`,
+`text2idngram`, `idngram2lm` is run in a temporary directory.
 
-Usage:
-    lm.py <corpus> <split>
+Files read: `corpus/<corpus>/corpus.yml` and the transcripts read by the
+adapter. Files written: the ARPA model, by default
+`corpus/<corpus>/lm/<split>.arpa`, or `corpus/<corpus>/lm/<corpus>.arpa`
+with `--all`. Intermediate files live in a temporary directory that is
+removed afterwards.
+
+Environment variables read: `SPHINX_ROOT`. Toolkit binaries are looked
+up in `bin/<arch>/` first, then on `PATH`.
+
+Usage: `lm.py <corpus> <split>` or `lm.py <corpus> --all`
+
+Warning:
+    The per-split mode is broken: `main` calls `extract_text`, which is
+    not defined, so `sphinx.sh lm <corpus> <split>` raises `NameError`.
+    Only `--all` reaches the toolkit.
 """
 
 import argparse
@@ -21,7 +38,21 @@ from lib.config import load_corpus
 
 
 def find_tool(name: str, root: Path) -> Path:
-    """find a cmu toolkit binary"""
+    """Locate a CMU SLM toolkit binary.
+
+    Args:
+        name: Executable name, for example `"text2wfreq"`.
+        root: Project root. `<root>/bin/<platform.machine()>/<name>` is
+            checked first.
+
+    Returns:
+        The binary in the project's `bin/<arch>/` directory if it exists,
+            otherwise the first match on `PATH`.
+
+    Raises:
+        SystemExit: If the binary is found in neither place (exit code 1, via
+            `err`).
+    """  # noqa: DOC502
     local = root / "bin" / platform.machine() / name
     if local.is_file():
         return local
@@ -32,7 +63,21 @@ def find_tool(name: str, root: Path) -> Path:
 
 
 def extract_text_from_split(corpus: dict, split_name: str, root: Path) -> str:
-    """extract cleaned text from a split's transcripts"""
+    """Return LM training text for one split of a corpus.
+
+    Args:
+        corpus: Corpus mapping from `load_corpus`. It must contain a `name`
+            key (declared in `corpus.yml`) and the split under `splits`.
+        split_name: Split to read.
+        root: Project root. Unused.
+
+    Returns:
+        One `<s> TEXT </s>` line per utterance, newline-terminated.
+
+    Note:
+        Nothing calls this function. `main` calls the undefined name
+        `extract_text` instead.
+    """
     split_cfg = corpus["splits"][split_name]
     adapter = get_adapter(corpus["name"])
     lines = []
@@ -48,7 +93,27 @@ def extract_text_from_split(corpus: dict, split_name: str, root: Path) -> str:
 
 
 def extract_text_from_full(corpus: dict, root: Path) -> str:
-    """extract cleaned text from the full corpus transcript"""
+    """Return LM training text from a corpus's `full_transcripts` file.
+
+    The adapter is called with the split name `"full"` and a synthetic split
+    config `{"transcripts": <full_transcripts>}`. This suits adapters that
+    read the transcript file named by `split_cfg["transcripts"]`
+    (Switchboard). The LibriSpeech adapter ignores that key and looks for a
+    `full/` audio directory instead.
+
+    Args:
+        corpus: Corpus mapping from `load_corpus`. It must contain `name`
+            and should contain `full_transcripts` (a path relative to the
+            corpus directory).
+        root: Project root. Unused.
+
+    Returns:
+        One `<s> TEXT </s>` line per utterance, newline-terminated.
+
+    Raises:
+        SystemExit: If `full_transcripts` is not defined or the file does not
+            exist (exit code 1, via `err`).
+    """  # noqa: DOC502
     full_trans_rel = corpus.get("full_transcripts")
     if not full_trans_rel:
         err(
@@ -83,7 +148,34 @@ def build_lm(
         root: Path,
         ngram_order: int = 3
 ) -> Path:
-    """build ARPA language model from text using CMU SLM toolkit."""
+    """Build an ARPA language model with the CMU-Cambridge SLM toolkit.
+
+    Writes `text` to a temporary directory and runs four shell commands with
+    `_run`: `text2wfreq` (word frequencies), `wfreq2vocab` (vocabulary),
+    `text2idngram -n <ngram_order>` (id n-gram counts) and
+    `idngram2lm -arpa` (the model). Other toolkit options are left at their
+    defaults. The temporary directory is removed on return.
+
+    Args:
+        text: Training text, one `<s> ... </s>` sentence per line.
+        output_path: Destination `.arpa` file. Its parent directories are
+            created.
+        root: Project root, used to locate the toolkit binaries.
+        ngram_order: N-gram order passed to `text2idngram`.
+
+    Returns:
+        `output_path`, unchanged.
+
+    Raises:
+        SystemExit: If a toolkit binary cannot be found, or with a command's
+            exit code if it fails.
+
+    Note:
+        - `ngram_order` is passed to `text2idngram` only. `idngram2lm` is run
+          without `-n` and uses its own default order.
+        - Paths are interpolated unquoted into shell command strings, so
+          paths containing spaces or shell metacharacters break the commands.
+    """  # noqa: DOC502
     text2wfreq = find_tool("text2wfreq", root)
     wfreq2vocab = find_tool("wfreq2vocab", root)
     text2idngram = find_tool("text2idngram", root)
@@ -118,7 +210,18 @@ def build_lm(
 
 
 def _run(cmd: str):
-    """run a shell command & exit on failure"""
+    """Run a shell command and exit the process if it fails.
+
+    The command runs with `shell=True` and its stdout and stderr are
+    captured. On success both are discarded. On failure the command line and
+    its stderr are printed to stdout.
+
+    Args:
+        cmd: Shell command line, including any redirections.
+
+    Raises:
+        SystemExit: With the command's exit code if it is nonzero.
+    """  # noqa: DOC502
     ret = subprocess.run(
         cmd,
         shell=True,
@@ -134,7 +237,32 @@ def _run(cmd: str):
 
 
 def main():
-    """program entry"""
+    """Run `sphinx.sh lm`: build a language model for a split or a corpus.
+
+    Parses `corpus`, the optional `split`, `--all`, `-n/--order` and
+    `-o/--output`; loads the corpus; chooses the output path (a relative
+    `--output` is resolved against `SPHINX_ROOT`); extracts the text; builds
+    the model with `build_lm`; and prints the `corpus.yml` and
+    `experiment.yml` snippets that select it.
+
+    Raises:
+        SystemExit: On invalid arguments, if both or neither of `split` and
+            `--all` are given (the latter with code 1 after printing help),
+            if the split is not defined, or if text extraction or the toolkit
+            fails.
+        NameError: Always in per-split mode, because `extract_text` is not
+            defined.
+
+    Warning:
+        The per-split path calls `extract_text`, which is not defined, so
+        every `lm.py <corpus> <split>` invocation raises `NameError` after
+        argument validation. `extract_text_from_split` exists but is unused.
+
+    Note:
+        The closing hints use `Path.relative_to`, which raises `ValueError`
+        when `--output` lies outside `SPHINX_ROOT`, or outside the corpus
+        directory if the corpus has no `lm` key.
+    """  # noqa: DOC502
     parser = argparse.ArgumentParser(
         description="build a trigram language model from training transcripts"
     )
