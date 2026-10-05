@@ -28,7 +28,6 @@ This module reads no files and no environment variables itself.
 """
 
 import importlib
-from pathlib import Path
 
 
 def get_adapter(corpus_name: str):

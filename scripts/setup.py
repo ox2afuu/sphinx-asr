@@ -42,7 +42,6 @@ Usage: `setup.py <experiment_dir>`
 
 import argparse
 import re
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 

@@ -18,11 +18,6 @@ Environment variables read: `SPHINX_ROOT`. Toolkit binaries are looked
 up in `bin/<arch>/` first, then on `PATH`.
 
 Usage: `lm.py <corpus> <split>` or `lm.py <corpus> --all`
-
-Warning:
-    The per-split mode is broken: `main` calls `extract_text`, which is
-    not defined, so `sphinx.sh lm <corpus> <split>` raises `NameError`.
-    Only `--all` reaches the toolkit.
 """
 
 import argparse
@@ -73,10 +68,6 @@ def extract_text_from_split(corpus: dict, split_name: str, root: Path) -> str:
 
     Returns:
         One `<s> TEXT </s>` line per utterance, newline-terminated.
-
-    Note:
-        Nothing calls this function. `main` calls the undefined name
-        `extract_text` instead.
     """
     split_cfg = corpus["splits"][split_name]
     adapter = get_adapter(corpus["name"])
@@ -250,13 +241,6 @@ def main():
             `--all` are given (the latter with code 1 after printing help),
             if the split is not defined, or if text extraction or the toolkit
             fails.
-        NameError: Always in per-split mode, because `extract_text` is not
-            defined.
-
-    Warning:
-        The per-split path calls `extract_text`, which is not defined, so
-        every `lm.py <corpus> <split>` invocation raises `NameError` after
-        argument validation. `extract_text_from_split` exists but is unused.
 
     Note:
         The closing hints use `Path.relative_to`, which raises `ValueError`
@@ -319,22 +303,22 @@ def main():
             available = ", ".join(splits.keys())
             err(f"Split '{args.split}' not found. Available: {available}")
         print(f"building {args.order}-gram LM for {args.corpus}/{args.split}")
-        text = extract_text(corpus, args.split, root)
+        text = extract_text_from_split(corpus, args.split, root)
 
     line_count = text.count("\n")
 
     print(f"  output: {output_path}")
-    print(f"  extracting text from transcripts...")
+    print("  extracting text from transcripts...")
     print(f"  {line_count} sentences")
 
     build_lm(text, output_path, root, args.order)
 
     print(f"\ndone. language model written to {output_path}")
     if not corpus.get("lm"):
-        print(f"to use as the default LM for this corpus, add to corpus.yml:")
+        print("to use as the default LM for this corpus, add to corpus.yml:")
         print(f"  lm: {output_path.relative_to(corpus['_dir'])}")
-    print(f"to override in an experiment, add to experiment.yml:")
-    print(f"  decode:")
+    print("to override in an experiment, add to experiment.yml:")
+    print("  decode:")
     print(f"    lm: {output_path.relative_to(root)}")
 
 

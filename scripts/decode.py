@@ -228,7 +228,6 @@ def main():
         for line in proc.stdout:
             output_lines.append(line)
     ret = proc.returncode
-    output = "".join(output_lines)
 
     elapsed = time.monotonic() - start
     minutes, seconds = divmod(int(elapsed), 60)

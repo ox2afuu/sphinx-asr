@@ -33,12 +33,11 @@ obtained from `SPHINX_ROOT` with `lib.asr_util.get_sphinx_root`.
 
 import platform
 import re
-import sys
 from pathlib import Path
 
 import yaml
 
-from .asr_util import err, get_sphinx_root
+from .asr_util import err
 
 
 def load_yaml(path: Path) -> dict:

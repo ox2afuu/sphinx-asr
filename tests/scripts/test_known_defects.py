@@ -296,29 +296,18 @@ def _undefined_called_names(path: Path) -> list[str]:
 
 
 def _script_params():
-    """Build one pytest param per script, xfailing the known-bad ``lm.py``.
+    """Build one pytest param per script.
+
+    ``lm.py`` was the known-bad case (review 2026-10-04 #2, fixed); it now
+    runs as a plain regression test like every other script.
 
     Returns:
         A list of ``pytest.param`` objects keyed by relative path.
     """
-    params = []
-    for path in sorted(SCRIPTS_DIR.rglob("*.py")):
-        rel = path.relative_to(SCRIPTS_DIR).as_posix()
-        marks = []
-        if rel == "lm.py":
-            marks.append(
-                pytest.mark.xfail(
-                    strict=True,
-                    reason=(
-                        "Known defect (review 2026-10-04 #2): scripts/lm.py:194 "
-                        "calls undefined extract_text (should be "
-                        "extract_text_from_split); 'sphinx lm <corpus> <split>' "
-                        "raises NameError."
-                    ),
-                )
-            )
-        params.append(pytest.param(path, id=rel, marks=marks))
-    return params
+    return [
+        pytest.param(path, id=path.relative_to(SCRIPTS_DIR).as_posix())
+        for path in sorted(SCRIPTS_DIR.rglob("*.py"))
+    ]
 
 
 @pytest.mark.parametrize("path", _script_params())
