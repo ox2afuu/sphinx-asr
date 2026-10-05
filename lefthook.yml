@@ -1,0 +1,51 @@
+# Git hooks for sphinx-asr. Install once per clone with: lefthook install
+#
+# pre-commit is a ratchet: it only checks STAGED files, so any file you touch
+# must meet the docstring standard, while untouched legacy files are not
+# blocked. pre-push checks the whole tree. See docs/DOCSTRINGS.md.
+#
+# Dev tools run through uv/uvx so the runtime .venv/ (built from
+# requirements.txt, airgapped on the cluster) is never modified.
+
+glob_matcher: doublestar
+
+pre-commit:
+  parallel: true
+  commands:
+    docstrings-google:
+      glob:
+        - "scripts/**/*.py"
+        - "tools/**/*.py"
+      run: uvx ruff@0.16.10 check --select D,DOC,F --preview {staged_files}
+
+    docstrings-tests:
+      glob: "tests/**/*.py"
+      run: uv run --no-project python tools/check_test_docstrings.py {staged_files}
+
+    no-emoji:
+      exclude:
+        - "vendor/**"
+      run: uv run --no-project python tools/check_no_emoji.py {staged_files}
+
+    pytest-fast:
+      glob:
+        - "tests/**"
+        - "scripts/**"
+        - "tools/**"
+      run: >-
+        uv run --no-project --with pytest --with-requirements requirements.txt
+        python -m pytest -q -m "not slow"
+
+pre-push:
+  parallel: true
+  commands:
+    docstrings-google:
+      run: uvx ruff@0.16.10 check --select D,DOC,F --preview scripts tools
+
+    docstrings-tests:
+      run: uv run --no-project python tools/check_test_docstrings.py tests
+
+    pytest:
+      run: >-
+        uv run --no-project --with pytest --with-requirements requirements.txt
+        python -m pytest -q

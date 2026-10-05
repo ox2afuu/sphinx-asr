@@ -1,0 +1,56 @@
+# Development metadata and tool configuration for sphinx-asr.
+#
+# This file is NOT used to install sphinx-asr. The runtime dependency source of
+# truth is requirements.txt: sphinx.sh pip-installs it into .venv/, and on the
+# airgapped ivaliceCluster .venv/ is prebuilt from wheels matching it. Keep the
+# [project].dependencies list below in sync with requirements.txt by hand.
+
+[project]
+name = "sphinx-asr"
+version = "0.0.0"
+description = "Thin Python wrapper over vendored CMU Sphinx training and decoding tools."
+requires-python = ">=3.12"
+# Mirrors requirements.txt (the airgap source of truth). Do not diverge.
+dependencies = [
+    "pyyaml",
+    "numpy",
+    "scipy",
+]
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[tool.uv]
+# scripts/ is not an installable package; uv must never try to build it.
+package = false
+
+[tool.ruff]
+target-version = "py312"
+src = ["scripts", "scripts/lib", "tools"]
+extend-exclude = ["vendor"]
+
+[tool.ruff.lint]
+# DOC (pydoclint) rules are preview-only in ruff.
+preview = true
+select = ["D", "DOC", "F", "E9", "B"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use GIVEN/WHEN/THEN docstrings, verified by
+# tools/check_test_docstrings.py. Exempt them from the Google section and
+# pydoclint rules, but keep D100-D107 so every test still needs a docstring.
+"tests/**" = [
+    "D405", "D406", "D407", "D408", "D409", "D410", "D411", "D412",
+    "D413", "D414", "D416", "D417",
+    "DOC",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--import-mode=importlib", "-ra"]
+markers = [
+    "slow: excluded from the pre-commit pytest-fast hook; runs on pre-push.",
+]
+xfail_strict = true

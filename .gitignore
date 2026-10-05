@@ -1,3 +1,6 @@
+# override global gitignore — this repo tracks its CLAUDE.md
+!CLAUDE.md
+
 features/
 experiments/
 *.log
@@ -32,3 +35,6 @@ corpus/*/**
 !corpus/*/dict/
 !corpus/*/lm/.gitkeep
 !corpus/*/dict/.gitkeep
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
